@@ -1,0 +1,467 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Case Attender Dashboard - Cyber Complaint Portal</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-50 min-h-screen p-6">
+  <div class="max-w-6xl mx-auto">
+    <header class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-bold text-indigo-700">Case Attender Dashboard</h1>
+      <div>
+        <button id="logoutBtn" class="bg-gray-200 px-3 py-1 rounded">Logout</button>
+      </div>
+    </header>
+
+    <main class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <section class="md:col-span-2 bg-white rounded p-4 shadow">
+        <h2 class="text-lg font-semibold mb-3">Public Complaints (All)</h2>
+        <div id="publicList" class="space-y-4"></div>
+
+        <h2 class="text-lg font-semibold mt-6 mb-3">Assigned to Me</h2>
+        <div id="myList" class="space-y-4"></div>
+      </section>
+
+      <aside class="bg-white rounded p-4 shadow">
+        <h2 class="text-lg font-semibold mb-3">Actions</h2>
+        <div class="space-y-3">
+          <div>
+            <label class="text-sm">My username</label>
+            <div id="myUser" class="mt-1 text-sm text-gray-700 font-medium"></div>
+          </div>
+          <div>
+            <label class="text-sm">Quick actions</label>
+            <div class="mt-2">
+              <button id="refreshBtn" class="bg-indigo-600 text-white px-3 py-1 rounded">Refresh</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <section class="mt-6 bg-white rounded p-4 shadow">
+      <h3 class="text-lg font-semibold mb-3">Case Details / Handled History</h3>
+      <div id="detailOrHistoryList" class="text-sm text-gray-700">Select a case to view details or see your completed history.</div>
+    </section>
+  </div>
+
+  <script>
+    const current = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    if (!current || current.role !== 'attender') window.location.href = 'login.html';
+    document.getElementById('myUser').textContent = current.username;
+
+    const publicList = document.getElementById('publicList');
+    const myList = document.getElementById('myList');
+    const detailOrHistoryList = document.getElementById('detailOrHistoryList');
+
+    let allCases = []; // This will hold the data from the database
+
+    async function fetchCases() {
+        try {
+            const response = await fetch('http://localhost:5001/complaints');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            // Adapt data from the database to the format the UI expects
+            allCases = data.map(c => {
+                const transactions = JSON.parse(c.transactions);
+                const totalAmount = transactions.reduce((sum, t) => sum + parseFloat(t.amount.replace('₹', '')), 0);
+                const firstTransaction = transactions[0] || {};
+
+                return {
+                    id: c.id,
+                    complainant: c.name,
+                    transactionId: firstTransaction.transaction_id || 'N/A',
+                    handler: c.handler || '',
+                    status: c.status || 'Pending',
+                    timeReceived: c.created_at,
+                    transactionCount: transactions.length,
+                    amount: totalAmount,
+                    timestamp: firstTransaction.date ? `${firstTransaction.date} ${firstTransaction.time}` : 'N/A',
+                    bankName: firstTransaction.bank_name || 'N/A',
+                    accountNo: firstTransaction.account_no || 'N/A',
+                    district: c.district,
+                    dob: c.dob,
+                    father_name: c.father_name,
+                    mobile_no: c.mobile_no,
+                    pin_code: c.pin_code,
+                    transactions: JSON.parse(c.transactions),
+                    phone_number: c.phone_number
+                };
+            });
+            renderAll();
+        } catch (error) {
+            console.error("Could not fetch complaints:", error);
+            publicList.innerHTML = `<div class="text-red-500">Error loading complaints. Is the API server running on port 5001?</div>`;
+        }
+    }
+
+    // --- Start of Shared Functions ---
+    function formatTime(t) {
+        const d = new Date(t);
+        return d.toLocaleString();
+    }
+
+    function copyToClipboard(text, event) {
+        navigator.clipboard.writeText(text).then(() => {
+            const button = event.target.closest('button');
+            if (!button) return;
+
+            const originalContent = button.innerHTML;
+            button.innerHTML = 'Copied!';
+            button.disabled = true;
+
+            setTimeout(() => {
+                button.innerHTML = originalContent;
+                button.disabled = false;
+            }, 1500);
+        });
+    }
+
+    function downloadBlob(filename, content) {
+        const blob = new Blob([content], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    }
+    // --- End of Shared Functions ---
+
+    function renderPublic() {
+      const copyIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>`;
+      const copyButton = (text) => `<button onclick="copyToClipboard('${String(text).replace(/'/g, "\\'")}', event)" class="ml-2 text-blue-600 hover:text-blue-800" title="Copy">${copyIcon}</button>`;
+
+      // Filter to show only unassigned cases or cases assigned to the current user.
+      const cases = allCases.filter(c => c.status === 'Pending' || c.handler === current.username);
+      publicList.innerHTML = '';
+      if (cases.length === 0) {
+        publicList.innerHTML = '<div class="text-sm text-gray-600">No unassigned cases available.</div>';
+        return;
+      }
+      cases.forEach(c => {
+        const caseDiv = document.createElement('div');
+        caseDiv.className = 'p-3 border rounded flex justify-between items-start bg-gray-50';
+
+        const detailsHtml = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                <div class="space-y-1">
+                    <h4 class="text-md font-semibold text-gray-800 border-b pb-1">Personal Information (ID: ${c.id})</h4>
+                    <div><strong>Name:</strong> ${c.complainant} ${copyButton(c.complainant)}</div>
+                    <div><strong>Father's Name:</strong> ${c.father_name} ${copyButton(c.father_name)}</div>
+                    <div><strong>Date of Birth:</strong> ${c.dob} ${copyButton(c.dob)}</div>
+                    <div><strong>Mobile No:</strong> ${c.mobile_no} ${copyButton(c.mobile_no)}</div>
+                    <div><strong>WhatsApp No:</strong> ${c.phone_number} ${copyButton(c.phone_number)}</div>
+                    <div><strong>District:</strong> ${c.district} ${copyButton(c.district)}</div>
+                    <div><strong>PIN Code:</strong> ${c.pin_code} ${copyButton(c.pin_code)}</div>
+                    <div><strong>Handler:</strong> <span class="font-medium">${c.handler || '— unassigned —'}</span> ${copyButton(c.handler || '')}</div>
+                    <div class="text-xs text-gray-600 mt-2">Portal Entry: ${formatTime(c.timeReceived)} ${copyButton(formatTime(c.timeReceived))}</div>
+                </div>
+                <div class="space-y-1 mt-4 md:mt-0">
+                    <h4 class="text-md font-semibold text-gray-800 border-b pb-1">Transaction Summary (${c.transactionCount} total)</h4>
+                     ${c.transactions.map((txn, i) => `
+                        <div class="p-2 border rounded mb-2 bg-gray-100">
+                            <p class="font-semibold">Transaction #${i + 1}</p>
+                            <div><strong>Date & Time:</strong> ${txn.date} ${txn.time}</div>
+                            <div><strong>Amount:</strong> ${txn.amount}</div>
+                            <div><strong>Bank:</strong> ${txn.bank_name}</div>
+                            <div><strong>Account No:</strong> ${txn.account_no}</div>
+                            <div><strong>Transaction ID:</strong> ${txn.transaction_id} ${copyButton(txn.transaction_id)}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            `;
+        const detailsContainer = document.createElement('div');
+        detailsContainer.innerHTML = detailsHtml;
+
+        const actionsContainer = document.createElement('div');
+        actionsContainer.className = 'flex flex-col items-end gap-2 text-right';
+
+        const claimButton = document.createElement('button');
+        if (c.handler) {
+            claimButton.textContent = 'Claimed';
+            claimButton.className = 'bg-gray-300 px-2 py-1 rounded';
+            claimButton.disabled = true;
+        } else {
+            claimButton.textContent = 'Claim / Pick';
+            claimButton.className = 'bg-indigo-600 text-white px-3 py-1 rounded';
+            claimButton.addEventListener('click', () => claimCase(c.id));
+        }
+
+        const viewDetailsButton = document.createElement('button');
+        viewDetailsButton.textContent = 'View Details';
+        viewDetailsButton.className = 'ml-2 bg-blue-100 text-blue-800 px-2 py-1 rounded';
+        viewDetailsButton.addEventListener('click', () => showDetails(c.id));
+
+        actionsContainer.appendChild(claimButton);
+        actionsContainer.appendChild(viewDetailsButton);
+        // Note: The other buttons were removed for brevity in the original request, but could be added here similarly.
+
+        caseDiv.appendChild(detailsContainer);
+        caseDiv.appendChild(actionsContainer);
+        publicList.appendChild(caseDiv);
+      });
+    }
+
+    function renderMyAssigned() {
+      const cases = allCases.filter(c => c.handler === current.username);
+      myList.innerHTML = '';
+      if (cases.length===0) myList.innerHTML = '<div class="text-sm text-gray-600">No assigned cases</div>';
+      cases.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'p-3 border rounded bg-white';
+        div.innerHTML = `
+          <div class="font-semibold">${c.complainant} <span class="text-xs text-gray-500">(${c.status})</span></div>
+          <div class="text-xs text-gray-600">DB Entry Time: ${formatTime(c.timeReceived)}</div>
+          <div class="mt-2">Txn: <input readonly value="${c.transactionId}" class="inline-block border rounded p-1 w-48" /> <button onclick="copyLocal('${c.transactionId}', event)" class="ml-2 text-blue-600 hover:text-blue-800" title="Copy"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block align-text-bottom" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg></button></div>
+          <div class="mt-3">
+            <button class="bg-blue-600 text-white px-3 py-1 rounded" onclick="showDetails(${c.id})">View Details</button>
+            <button class="bg-green-600 text-white px-3 py-1 rounded" onclick="markComplete(${c.id})">Mark Complete</button>
+            <button class="ml-2 bg-gray-100 px-2 py-1 rounded" onclick="downloadEvidence(${c.id})">Download Evidence</button>
+          </div>
+        `;
+        myList.appendChild(div);
+      });
+    }
+
+    function renderHistory() {
+      const myCases = allCases.filter(c => c.handler === current.username);
+      
+      const completedCases = myCases.filter(c => c.status === 'Completed');
+      const completedTransactions = myCases
+        .filter(c => c.transactionCount > 1 && c.transactions)
+        .flatMap(c => 
+            c.transactions
+             .filter(t => t.completed)
+             .map(t => ({...t, complainant: c.complainant})) // Add complainant name for context
+        );
+
+      detailOrHistoryList.innerHTML = '<h4 class="font-semibold text-gray-800 border-b pb-2 mb-2">Handled History</h4>';
+      if (completedCases.length === 0 && completedTransactions.length === 0) {
+        detailOrHistoryList.innerHTML += '<div class="text-sm text-gray-600">No handled cases or transactions yet.</div>';
+      }
+
+      const list = document.createElement('div');
+      completedCases.forEach(c=>{
+        const div = document.createElement('div');
+        div.className = 'p-2 border-b';
+        div.innerHTML = `<div><strong>${c.complainant}</strong> — Txn: ${c.transactionId} — Completed</div>`;
+        list.appendChild(div);
+      });
+      detailOrHistoryList.appendChild(list); // Start with fully completed cases
+    }
+
+    function showDetails(id) {
+      const c = allCases.find(x=>x.id===id);
+      const copyIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>`;
+      const copyButton = (text) => `<button onclick="copyToClipboard('${String(text).replace(/'/g, "\\'")}', event)" class="ml-2 text-blue-600 hover:text-blue-800" title="Copy">${copyIcon}</button>`;
+
+      let detailsHtml = '';
+
+      if (c.transactionCount > 1 && c.transactions) {
+        const nextTxnIndex = c.transactions.findIndex(t => !t.completed);
+        if (nextTxnIndex !== -1) {
+            const txn = c.transactions[nextTxnIndex];
+            detailsHtml = `
+                <div class="font-semibold mb-2 border-b pb-2">Next Transaction: ${nextTxnIndex + 1} of ${c.transactionCount} for ${c.complainant}</div>
+                <div class="space-y-1">
+                  <div><strong>Transaction ID:</strong> ${txn.transaction_id} ${copyButton(txn.transaction_id)}</div>
+                  <div><strong>Case Occurred Time:</strong> ${txn.date} ${txn.time} ${copyButton(`${txn.date} ${txn.time}`)}</div>
+                  <div><strong>Amount:</strong> ${txn.amount} ${copyButton(txn.amount)}</div>
+                  <div><strong>Bank Name:</strong> ${txn.bank_name} ${copyButton(txn.bank_name)}</div>
+                  <div><strong>Account No:</strong> ${txn.account_no} ${copyButton(txn.account_no)}</div>
+                </div>`;
+        } else {
+            detailsHtml = `<div class="text-gray-600">All transactions for this case have been completed.</div>`;
+        } 
+      } else {
+         detailsHtml = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                <div class="space-y-2">
+                    <h4 class="text-md font-semibold text-gray-800 border-b pb-1">Personal Information</h4>
+                    <div><strong>Name:</strong> ${c.complainant} ${copyButton(c.complainant)}</div>
+                    <div><strong>Father's Name:</strong> ${c.father_name} ${copyButton(c.father_name)}</div>
+                    <div><strong>Date of Birth:</strong> ${c.dob} ${copyButton(c.dob)}</div>
+                    <div><strong>Mobile No:</strong> ${c.mobile_no} ${copyButton(c.mobile_no)}</div>
+                    <div><strong>WhatsApp No:</strong> ${c.phone_number} ${copyButton(c.phone_number)}</div>
+                    <div><strong>District:</strong> ${c.district} ${copyButton(c.district)}</div>
+                    <div><strong>PIN Code:</strong> ${c.pin_code} ${copyButton(c.pin_code)}</div>
+                </div>
+                <div class="space-y-2">
+                    <h4 class="text-md font-semibold text-gray-800 border-b pb-1">Transaction Summary</h4>
+                     ${c.transactions.map((txn, i) => `
+                        <div class="p-2 border rounded mb-2 bg-gray-50 text-sm">
+                            <p class="font-semibold">Transaction #${i + 1}</p>
+                            <div><strong>Date & Time:</strong> ${txn.date} ${txn.time} ${copyButton(`${txn.date} ${txn.time}`)}</div>
+                            <div><strong>Amount:</strong> ${txn.amount} ${copyButton(txn.amount)}</div>
+                            <div><strong>Bank:</strong> ${txn.bank_name} ${copyButton(txn.bank_name)}</div>
+                            <div><strong>Account No:</strong> ${txn.account_no} ${copyButton(txn.account_no)}</div>
+                            <div><strong>Transaction ID:</strong> ${txn.transaction_id} ${copyButton(txn.transaction_id)}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            `;
+      }
+      const detailContainer = document.createElement('div');
+      detailContainer.className = 'mb-4';
+      detailContainer.innerHTML = detailsHtml;
+      detailOrHistoryList.prepend(detailContainer);
+    }
+
+    async function claimCase(id) {
+      const c = allCases.find(x=>x.id===id);
+      if (c.handler) return alert('Already claimed');
+
+      // Store original state for potential rollback
+      const originalHandler = c.handler;
+      const originalStatus = c.status;
+
+      // Optimistic UI update
+      c.handler = current.username;
+      c.status = 'In Progress';
+      renderPublic();
+      renderMyAssigned();
+      showDetails(id);
+
+      try {
+          const response = await fetch(`/complaints/${id}/claim`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ handler: current.username, status: 'In Progress' }),
+          });
+          if (!response.ok) throw new Error('Server failed to claim case.');
+          alert('Case ' + id + ' has been claimed and saved.');
+      } catch (error) {
+          console.error("Error claiming case:", error);
+          alert('Error saving claim: ' + error.message + '. Reverting changes.');
+          // Rollback UI on failure
+          c.handler = originalHandler;
+          c.status = originalStatus;
+          renderPublic();
+          renderMyAssigned();
+      }
+    }
+
+    async function markComplete(id) {
+      const c = allCases.find(x=>x.id===id);
+
+      // Store original state for potential rollback
+      const originalStatus = c.status;
+      const originalTransactions = JSON.parse(JSON.stringify(c.transactions)); // Deep copy
+
+      let newStatus = originalStatus;
+
+      if (c.transactionCount > 1 && c.transactions) {
+        const nextTxnIndex = c.transactions.findIndex(t => !t.completed);
+        if (nextTxnIndex !== -1) {
+            c.transactions[nextTxnIndex].completed = true;
+            const allDone = c.transactions.every(t => t.completed);
+            if (allDone) newStatus = 'Completed';
+        }
+      } else {
+        newStatus = 'Completed';
+      }
+
+      // Optimistic UI update
+      c.status = newStatus;
+      renderMyAssigned();
+      renderHistory();
+      if (c.status !== 'Completed') {
+          showDetails(id);
+      }
+
+      try {
+          const response = await fetch(`/complaints/${id}/status`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  status: c.status,
+                  transactions: c.transactions // Send updated transactions array
+              }),
+          });
+          if (!response.ok) throw new Error('Server failed to update status.');
+          alert('Case ' + id + ' status updated and saved.');
+      } catch (error) {
+          console.error("Error marking complete:", error);
+          alert('Error saving status: ' + error.message + '. Reverting changes.');
+          // Rollback UI on failure
+          c.status = originalStatus;
+          c.transactions = originalTransactions;
+          renderMyAssigned();
+          renderHistory();
+          if (c.status !== 'Completed') showDetails(id);
+      }
+    }
+
+    function copyLocal(val, event) {
+        navigator.clipboard.writeText(val).then(() => {
+            const button = event.target.closest('button');
+            if (!button) return;
+
+            const originalContent = button.innerHTML;
+            button.innerHTML = 'Copied!';
+            setTimeout(() => {
+                button.innerHTML = originalContent;
+            }, 1500);
+        });
+    }
+
+    function downloadEvidence(id) {
+      const c = allCases.find(x=>x.id===id);
+
+      const transactions = c.transactions || [];
+      // Construct the detailed content string
+      const fileContent = `
+Case Details for: ${c.complainant}
+--------------------------------------------------
+DB Entry Time: ${formatTime(c.timeReceived)}
+Total Amount: ₹${c.amount.toFixed(2)}
+Transaction Count: ${c.transactionCount}
+Handler: ${c.handler || '— unassigned —'}
+
+--- Personal Details ---
+Name: ${c.complainant}
+Father's Name: ${c.father_name}
+DOB: ${c.dob}
+Mobile No: ${c.mobile_no}
+District: ${c.district}
+PIN Code: ${c.pin_code}
+
+--- Transaction Details ---
+${transactions.map((t, i) => `
+Transaction #${i+1}:
+  - Date: ${t.date}, Time: ${t.time}, Amount: ${t.amount}, Bank: ${t.bank_name}, Account: ${t.account_no}, Txn ID: ${t.transaction_id}
+`).join('')}`;
+      downloadBlob('details_case_' + id + '.txt', fileContent.trim());
+    }
+
+    function downloadId(id) {
+      const c = allCases.find(x=>x.id===id);
+      downloadBlob('id_case_' + id + '.pdf', c.idProofContent);
+    }
+
+    document.getElementById('logoutBtn').addEventListener('click', ()=>{ localStorage.removeItem('currentUser'); window.location.href='login.html'; });
+    document.getElementById('refreshBtn').addEventListener('click', ()=>{ fetchCases(); });
+
+    function renderAll() {
+      renderPublic();
+      renderMyAssigned();
+      renderHistory();
+    }
+
+    // initial
+    fetchCases();
+
+  </script>
+<script src="api_fetch.js"></script>
+</body>
+</html>
