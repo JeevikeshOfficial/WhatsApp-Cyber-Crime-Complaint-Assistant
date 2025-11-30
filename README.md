@@ -335,7 +335,7 @@ Developer:
 
 Chatbot:
 
-1 . Jeevikesh S - LinkedIn (https://linkedin.com/in/yourprofile](https://www.linkedin.com/in/Jeevikesh-Srinivasan/)
+1 . Jeevikesh S - LinkedIn (https://www.linkedin.com/in/Jeevikesh-Srinivasan/)
 
 2 . Balaguru J P - LinkedIn (https://www.linkedin.com/in/balaguru-j-p-62227a276/)
 
