@@ -329,16 +329,22 @@ Add rate limiting
 Monitor error logs
 
 ---
-## About
-- Developer:
+## About:
+
+Developer:
+
   Chatbot:
     1 . Jeevikesh S - LinkedIn (https://linkedin.com/in/yourprofile](https://www.linkedin.com/in/Jeevikesh-Srinivasan/)
     2 . Balaguru J P - LinkedIn (https://www.linkedin.com/in/balaguru-j-p-62227a276/)
     3. Sathivel B - LinkedIn (https://www.linkedin.com/in/sakthivel-b-bb3171350/)
+
+    
   Website:
     1. Pragatheeswaran M - LinkedIn (https://www.linkedin.com/in/spm-pragatheeswaran-4a2824245/)
     2. Tejaswini Balaji - LinkedIn (https://www.linkedin.com/in/tejaswini-balaji-826753300/)
     3. Selvarani Palanivelrajaan - LinkedIn (https://www.linkedin.com/in/selvarani-palanivelrajaan/)
     4. Janani 
+---
+
 Version
 1.0.0 - November 2025
